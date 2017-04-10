@@ -393,7 +393,7 @@ func NewNSQProducerByAdminAddress(adminAddr string, config *nsq.Config, l logger
 			break
 		}
 	}
-	if len(lookupdList) <= 1 {
+	if len(lookupdList) <= 0 {
 		return nil, errors.New("nsqlookupd unavailable")
 	}
 
