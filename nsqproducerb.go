@@ -3,10 +3,13 @@ package nsqproducerb
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"sync"
 
 	"time"
+
+	"errors"
 
 	"github.com/nsqio/go-nsq"
 	"github.com/sryanyuan/nsqproducer"
@@ -346,4 +349,53 @@ func NewNSQProducer(nsqlookupdAddrs []string, config *nsq.Config, l logger, logl
 	go instance.lookupdNodesLoop()
 
 	return instance, nil
+}
+
+// NewNSQProducerByAdminAddress initialize a producer instance by getting nsqlookupd info from nsq admin
+func NewNSQProducerByAdminAddress(adminAddr string, config *nsq.Config, l logger, loglvl nsq.LogLevel) (INSQProducerb, error) {
+	// Get nsqlookupd info from nsq admin
+	reqAddr := adminAddr
+	if !strings.Contains(reqAddr, "http://") {
+		reqAddr = "http://" + reqAddr
+	}
+	// Get content from nsq admin
+	body, err := nsqproducer.DoHTTPGet(reqAddr+"/nodes", nil)
+	if err != nil {
+		return nil, err
+	}
+	if nil != err {
+		return nil, err
+	}
+	const findStr = "var NSQLOOKUPD = ["
+	content := string(body)
+	firstPos := strings.Index(content, findStr)
+	if -1 == firstPos {
+		// Not found
+		return nil, errors.New("Parse nsqlookupd from nsq admin failed")
+	}
+	lookupdBytes := make([]byte, 0, 1024)
+	for pos := firstPos + len(findStr); ; pos++ {
+		if body[pos] == ']' {
+			// Reach the end
+			break
+		}
+		if body[pos] == '\'' {
+			// Ignore splitter
+			continue
+		}
+		lookupdBytes = append(lookupdBytes, body[pos])
+	}
+	lookupdList := strings.Split(string(lookupdBytes), ",")
+	// If element is empty, remove it
+	for i, v := range lookupdList {
+		if v == "" {
+			lookupdList = lookupdList[0:i]
+			break
+		}
+	}
+	if len(lookupdList) <= 1 {
+		return nil, errors.New("nsqlookupd unavailable")
+	}
+
+	return NewNSQProducer(lookupdList, config, l, loglvl)
 }
